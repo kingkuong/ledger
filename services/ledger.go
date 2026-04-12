@@ -5,6 +5,7 @@ import (
 	"fake-ledger/models"
 	"fake-ledger/repos"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -71,4 +72,8 @@ func (s *LedgerService) CreateAccount(ctx context.Context, account *models.Accou
 
 func (s *LedgerService) CreateTransaction(ctx context.Context, transaction *models.Transaction) (*models.Transaction, error) {
 	return s.transactionRepo.Create(ctx, transaction)
+}
+
+func (s *LedgerService) FetchTransactions(ctx context.Context, accountID string, from *time.Time, to *time.Time) ([]models.Transaction, error) {
+	return s.transactionRepo.FetchTransactions(ctx, accountID, from, to)
 }
