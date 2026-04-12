@@ -33,12 +33,25 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
       AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
+  dynamo-init:
+    image: "amazon/aws-cli"
+    volumes:
+      - ./scripts:/scripts:ro,z
+    environment:
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
+    entrypoint: /bin/sh /scripts/init-dynamo.sh
+    depends_on:
+      - dynamo
   dynamo-admin:
     image: "aaronshaf/dynamodb-admin"
     ports:
       - "8001:8001"
     environment:
       DYNAMO_ENDPOINT: "http://dynamo:8000"
+      AWS_REGION: "us-east-1"
     depends_on:
       - dynamo
   app:
@@ -48,6 +61,9 @@ services:
     environment:
       APP_DYNAMO_URL: 'http://dynamo:8000'
       APP_POSTGRES_URL: 'postgres://postgres:password@postgres:5432/ledger'
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
     depends_on:
       postgres:
         condition: service_healthy

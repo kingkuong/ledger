@@ -21,13 +21,15 @@ const (
 
 // Transaction represents the ledger entry stored in DynamoDB.
 type Transaction struct {
-	TransactionID string          `json:"transaction_id"`
-	Side          TransactionSide `json:"side"` // e.g., "DEBIT" or "CREDIT"
-	Amount        int64           `json:"amount"`
-	Description   string          `json:"description"`
-	CounterPartID *string         `json:"counter_part_id"`
-	AccountID     string          `json:"account_id"`
-	CreatedAt     time.Time       `json:"created_at"`
+	PK            string          `dynamodbav:"PK"`
+	SK            string          `dynamodbav:"SK"`
+	TransactionID string          `json:"transaction_id"  dynamodbav:"transaction_id"`
+	Side          TransactionSide `json:"side" dynamodbav:"side"` // e.g., "DEBIT" or "CREDIT"
+	Amount        int64           `json:"amount" dynamodbav:"amount"`
+	Description   string          `json:"description" dynamodbav:"description"`
+	CounterPartID *string         `json:"counter_part_id" dynamodbav:"counter_part_id"`
+	AccountID     string          `json:"account_id" dynamodbav:"account_id"`
+	CreatedAt     time.Time       `json:"created_at" dynamodbav:"created_at"`
 }
 
 type OutboxTransactionStatus string
