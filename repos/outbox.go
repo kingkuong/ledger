@@ -10,8 +10,8 @@ import (
 
 type OutboxRepo interface {
 	Create(ctx context.Context, tx pgx.Tx, outbox *models.OutboxTransaction) (*models.OutboxTransaction, error)
-	//Update(ctx context.Context, outbox models.OutboxTransaction) error
-	//FetchPending(ctx context.Context, limit int) ([]*models.OutboxTransaction, error)
+	Update(ctx context.Context, outbox models.OutboxTransaction) error
+	FetchPending(ctx context.Context, limit int) ([]*models.OutboxTransaction, error)
 }
 
 type OutboxPostgresRepo struct {
@@ -58,4 +58,54 @@ func (r *OutboxPostgresRepo) Create(ctx context.Context, tx pgx.Tx, outbox *mode
 	}
 
 	return outbox, nil
+}
+
+func (r *OutboxPostgresRepo) Update(ctx context.Context, outbox models.OutboxTransaction) error {
+	query := `UPDATE outbox SET status = $1, updated_at = NOW(), retry_count = $2, last_retry_at = NOW() WHERE id = $3`
+	_, err := r.pool.Exec(ctx, query, outbox.Status, outbox.RetryCount, outbox.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *OutboxPostgresRepo) FetchPending(ctx context.Context, limit int) ([]*models.OutboxTransaction, error) {
+	query := `SELECT id,
+				side,
+				amount,
+				status,
+				description,
+				counter_part_id,
+				account_id,
+				retry_count,
+				created_at
+			FROM outbox WHERE status = $1 LIMIT $2`
+	rows, err := r.pool.Query(ctx, query, models.OutboxTransactionStatusPENDING, limit)
+	if err != nil {
+		return []*models.OutboxTransaction{}, err
+	}
+	defer rows.Close()
+
+	var results []*models.OutboxTransaction
+	for rows.Next() {
+		var item models.OutboxTransaction
+		err := rows.Scan(
+			&item.ID,
+			&item.Side,
+			&item.Amount,
+			&item.Status,
+			&item.Description,
+			&item.CounterPartID,
+			&item.AccountID,
+			&item.RetryCount,
+			&item.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, &item)
+	}
+
+	return results, nil
 }

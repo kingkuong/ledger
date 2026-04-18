@@ -23,21 +23,12 @@ type LedgerService struct {
 	pool                  *pgxpool.Pool
 }
 
-func NewLedgerService(ctx context.Context) (*LedgerService, error) {
-	pool, err := pgxpool.New(ctx, os.Getenv("APP_POSTGRES_URL"))
-	if err != nil {
-		return nil, err
-	}
-	accountRepo := repos.NewPostgresAccountRepo(pool)
-
-	client, err := NewDynamoClient(ctx, "http://dynamo:8000")
-	if err != nil {
-		return nil, err
-	}
-	transactionRepo := repos.NewDynamoTransactionRepo(client)
-
-	outboxTransactionRepo := repos.NewOutboxPostgresRepo(pool)
-
+func NewLedgerService(ctx context.Context,
+	accountRepo repos.AccountRepo,
+	transactionRepo repos.TransactionRepo,
+	outboxTransactionRepo repos.OutboxRepo,
+	pool *pgxpool.Pool,
+) (*LedgerService, error) {
 	return &LedgerService{
 		accountRepo:           accountRepo,
 		transactionRepo:       transactionRepo,
@@ -103,9 +94,12 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, transaction *mode
 		return nil, err
 	}
 
-	transaction, err = s.transactionRepo.Create(ctx, transaction)
+	_, err = s.outboxTransactionRepo.Create(ctx, tx, &models.OutboxTransaction{
+		ID:          uuid.NewString(),
+		Transaction: *transaction,
+		Status:      models.OutboxTransactionStatusPENDING,
+	})
 	if err != nil {
-		// TODO: revert the balance
 		return nil, err
 	}
 
@@ -116,6 +110,10 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, transaction *mode
 
 func (s *LedgerService) FetchTransactions(ctx context.Context, accountID string, from *time.Time, to *time.Time) ([]models.Transaction, error) {
 	return s.transactionRepo.FetchTransactions(ctx, accountID, from, to)
+}
+
+func (s *LedgerService) FetchOutboxPending(ctx context.Context, limit int) ([]*models.OutboxTransaction, error) {
+	return s.outboxTransactionRepo.FetchPending(ctx, limit)
 }
 
 func (s *LedgerService) Transfer(ctx context.Context, accountIDfrom string, accountIDto string, amount int64) error {

@@ -30,14 +30,13 @@ func NewDynamoTransactionRepo(client *dynamodb.Client) *DynamoTransactionRepo {
 	}
 }
 
+// this method needs to be idempotent
 func (r *DynamoTransactionRepo) Create(ctx context.Context, transaction *models.Transaction) (*models.Transaction, error) {
 	pk := generatePK(transaction.AccountID)
-	now := time.Now()
-	sk := generateSK(&now)
+	sk := generateSK(&transaction.CreatedAt)
 
 	transaction.PK = pk
 	transaction.SK = sk
-	transaction.CreatedAt = now
 
 	item, err := attributevalue.MarshalMap(transaction)
 	if err != nil {

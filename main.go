@@ -3,14 +3,31 @@ package main
 import (
 	"context"
 	"fake-ledger/models"
+	"fake-ledger/processes"
+	"fake-ledger/repos"
 	service "fake-ledger/services"
 	"fmt"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	fmt.Println("hello")
 	ctx := context.Background()
-	s, err := service.NewLedgerService(ctx)
+	pool, err := pgxpool.New(ctx, os.Getenv("APP_POSTGRES_URL"))
+	if err != nil {
+		panic(fmt.Errorf("Unable to create pool %w", err))
+	}
+	outboxRepo := repos.NewOutboxPostgresRepo(pool)
+	accountRepo := repos.NewPostgresAccountRepo(pool)
+
+	client, err := service.NewDynamoClient(ctx, "http://dynamo:8000")
+	if err != nil {
+		panic(fmt.Errorf("Unable to do transfer%w", err))
+	}
+	transactionRepo := repos.NewDynamoTransactionRepo(client)
+
+	s, err := service.NewLedgerService(ctx, accountRepo, transactionRepo, outboxRepo, pool)
 	if err != nil {
 		panic(fmt.Errorf("Unable to start the service, check your code!! %w", err))
 	}
@@ -52,5 +69,12 @@ func main() {
 		panic(fmt.Errorf("Unable to do transfer%w", err))
 	}
 
-	fmt.Printf("----------TRANSFER----------\n%+v\n", transaction)
+	fmt.Printf("----------OUTBOX----------\n")
+	// outbox
+	outboxProcess := processes.NewOutboxProcess(
+		*outboxRepo,
+		*transactionRepo,
+	)
+	outboxProcess.Start()
+	fmt.Printf("----------OUTBOX----------\n")
 }
