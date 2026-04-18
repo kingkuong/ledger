@@ -12,28 +12,40 @@ type Account struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+type TransactionSide string
+
+const (
+	TransactionSideDR TransactionSide = "DR"
+	TransactionSideCR TransactionSide = "CR"
+)
+
 // Transaction represents the ledger entry stored in DynamoDB.
 type Transaction struct {
-	TransactionID string    `json:"transaction_id"`
-	Side          string    `json:"side"` // e.g., "DEBIT" or "CREDIT"
-	Amount        int64     `json:"amount"`
-	Description   string    `json:"description"`
-	CounterPartID string    `json:"counter_part_id"`
-	AccountID     string    `json:"account_id"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	PK            string          `dynamodbav:"PK"`
+	SK            string          `dynamodbav:"SK"`
+	TransactionID string          `json:"transaction_id"  dynamodbav:"transaction_id"`
+	Side          TransactionSide `json:"side" dynamodbav:"side"` // e.g., "DEBIT" or "CREDIT"
+	Amount        int64           `json:"amount" dynamodbav:"amount"`
+	Description   string          `json:"description" dynamodbav:"description"`
+	CounterPartID *string         `json:"counter_part_id" dynamodbav:"counter_part_id"`
+	AccountID     string          `json:"account_id" dynamodbav:"account_id"`
+	CreatedAt     time.Time       `json:"created_at" dynamodbav:"created_at"`
 }
 
+type OutboxTransactionStatus string
+
+const (
+	OutboxTransactionStatusPENDING OutboxTransactionStatus = "PENDING"
+	OutboxTransactionStatusSETTLED OutboxTransactionStatus = "SETTLED"
+	OutboxTransactionStatusDEAD    OutboxTransactionStatus = "DEAD"
+)
+
 // OutboxTransaction represents a pending transaction task stored in PostgreSQL.
-// By embedding the Transaction struct, we ensure all data required to create 
-// the DynamoDB record is captured atomically within the same Postgres transaction 
-// as the Account balance update.
 type OutboxTransaction struct {
-	ID          string     `json:"id"`
-	Transaction          `json:"transaction"` // Embedded fields are promoted
-	Status      string     `json:"status"`     // e.g., "PENDING", "COMPLETED", "FAILED"
-	RetryCount  int        `json:"retry_count"`
-	LastRetryAt *time.Time `json:"last_retry_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          string                  `json:"id"`
+	Transaction `json:"transaction"`    // Embedded fields are promoted
+	Status      OutboxTransactionStatus `json:"status"` // e.g., "PENDING", "COMPLETED", "FAILED"
+	RetryCount  int                     `json:"retry_count"`
+	LastRetryAt *time.Time              `json:"last_retry_at"`
+	UpdatedAt   *time.Time              `json:"updated_at"`
 }

@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: "postgres:18"
+    volumes:
+      - data_postgres:/var/lib/postgresql
+      - ./sql:/docker-entrypoint-initdb.d:ro,z
+    ports:
+      - "54320:5432"
+    environment:
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'password'
+      POSTGRES_DB: 'ledger'
+      PGDATA: '/var/lib/postgresql/18/docker'
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+  pgadmin:
+    image: "dpage/pgadmin4"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@example.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+  dynamo:
+    image: "amazon/dynamodb-local"
+    volumes:
+      - data_dynamo:/home/dynamodblocal/data
+    ports:
+      - "8000:8000"
+    environment:
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
+  dynamo-init:
+    image: "amazon/aws-cli"
+    volumes:
+      - ./scripts:/scripts:ro,z
+    environment:
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
+    entrypoint: /bin/sh /scripts/init-dynamo.sh
+    depends_on:
+      - dynamo
+  dynamo-admin:
+    image: "aaronshaf/dynamodb-admin"
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: "http://dynamo:8000"
+      AWS_REGION: "us-east-1"
+    depends_on:
+      - dynamo
+  app:
+    build: .
+    ports:
+      - "8081:8080"
+    environment:
+      APP_DYNAMO_URL: 'http://dynamo:8000'
+      APP_POSTGRES_URL: 'postgres://postgres:password@postgres:5432/ledger'
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+      AWS_DEFAULT_REGION: 'us-east-1'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dynamo:
+        condition: service_started
+volumes:
+  data_postgres:
+  data_dynamo:
