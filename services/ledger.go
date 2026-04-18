@@ -4,6 +4,7 @@ import (
 	"context"
 	"fake-ledger/models"
 	"fake-ledger/repos"
+	"fmt"
 	"os"
 	"time"
 
@@ -11,12 +12,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type LedgerService struct {
-	accountRepo     repos.AccountRepo
-	transactionRepo repos.TransactionRepo
+	accountRepo           repos.AccountRepo
+	transactionRepo       repos.TransactionRepo
+	outboxTransactionRepo repos.OutboxRepo
+	pool                  *pgxpool.Pool
 }
 
 func NewLedgerService(ctx context.Context) (*LedgerService, error) {
@@ -32,9 +36,13 @@ func NewLedgerService(ctx context.Context) (*LedgerService, error) {
 	}
 	transactionRepo := repos.NewDynamoTransactionRepo(client)
 
+	outboxTransactionRepo := repos.NewOutboxPostgresRepo(pool)
+
 	return &LedgerService{
-		accountRepo:     accountRepo,
-		transactionRepo: transactionRepo,
+		accountRepo:           accountRepo,
+		transactionRepo:       transactionRepo,
+		outboxTransactionRepo: outboxTransactionRepo,
+		pool:                  pool,
 	}, nil
 }
 
@@ -71,9 +79,116 @@ func (s *LedgerService) CreateAccount(ctx context.Context, account *models.Accou
 }
 
 func (s *LedgerService) CreateTransaction(ctx context.Context, transaction *models.Transaction) (*models.Transaction, error) {
-	return s.transactionRepo.Create(ctx, transaction)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	account, err := s.accountRepo.ReadForUpdate(ctx, tx, transaction.AccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	balance := account.Balance
+	amount := transaction.Amount
+	if transaction.Side == models.TransactionSideDR {
+		if balance < transaction.Amount {
+			return nil, fmt.Errorf("Unable to commit transaction, Not Enough Balance")
+		}
+		amount = -amount
+	}
+	err = s.accountRepo.UpdateBalance(ctx, tx, transaction.AccountID, amount)
+	if err != nil {
+		return nil, err
+	}
+
+	transaction, err = s.transactionRepo.Create(ctx, transaction)
+	if err != nil {
+		// TODO: revert the balance
+		return nil, err
+	}
+
+	tx.Commit(ctx)
+
+	return transaction, nil
 }
 
 func (s *LedgerService) FetchTransactions(ctx context.Context, accountID string, from *time.Time, to *time.Time) ([]models.Transaction, error) {
 	return s.transactionRepo.FetchTransactions(ctx, accountID, from, to)
+}
+
+func (s *LedgerService) Transfer(ctx context.Context, accountIDfrom string, accountIDto string, amount int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	accountFrom, err := s.accountRepo.ReadForUpdate(ctx, tx, accountIDfrom)
+	if err != nil {
+		return err
+	}
+	accountTo, err := s.accountRepo.ReadForUpdate(ctx, tx, accountIDto)
+	if err != nil {
+		return err
+	}
+
+	if accountFrom.Balance < amount {
+		return fmt.Errorf("Not enough balance")
+	}
+
+	err = s.accountRepo.UpdateBalance(ctx, tx, accountFrom.ID, -amount)
+	if err != nil {
+		return err
+	}
+	err = s.accountRepo.UpdateBalance(ctx, tx, accountTo.ID, amount)
+	if err != nil {
+		return err
+	}
+	// create outbox transactions
+	// Decided to create UUID in app as we'll save trip to db for writing
+	// CR transaction
+
+	crTransactionID := uuid.NewString()
+	drTransactionID := uuid.NewString()
+	crTransactionOubox := &models.OutboxTransaction{
+		ID: crTransactionID,
+		Transaction: models.Transaction{
+			Side:          models.TransactionSideCR,
+			Amount:        amount,
+			Description:   fmt.Sprintf("Transfer from %s", accountIDfrom),
+			AccountID:     accountIDto,
+			CounterPartID: &drTransactionID,
+		},
+		Status: models.OutboxTransactionStatusPENDING,
+	}
+	crTransactionOubox, err = s.outboxTransactionRepo.Create(ctx, tx, crTransactionOubox)
+	if err != nil {
+		return err
+	}
+	// DR transaction
+	drTransactionOubox := &models.OutboxTransaction{
+		ID: drTransactionID,
+		Transaction: models.Transaction{
+			Side:          models.TransactionSideDR,
+			Amount:        amount,
+			Description:   fmt.Sprintf("Transfer to %s", accountIDto),
+			AccountID:     accountIDfrom,
+			CounterPartID: &crTransactionID,
+		},
+		Status: models.OutboxTransactionStatusPENDING,
+	}
+	drTransactionOubox, err = s.outboxTransactionRepo.Create(ctx, tx, drTransactionOubox) // DR transaction
+	if err != nil {
+		return err
+	}
+	// Update account_
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -47,6 +47,5 @@ type OutboxTransaction struct {
 	Status      OutboxTransactionStatus `json:"status"` // e.g., "PENDING", "COMPLETED", "FAILED"
 	RetryCount  int                     `json:"retry_count"`
 	LastRetryAt *time.Time              `json:"last_retry_at"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
+	UpdatedAt   *time.Time              `json:"updated_at"`
 }

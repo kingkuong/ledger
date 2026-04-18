@@ -16,26 +16,41 @@ func main() {
 	}
 
 	fmt.Println("service registered")
+
 	account := &models.Account{
 		AccountNumber: "ACC0001",
 	}
-	acct, err := s.CreateAccount(ctx, account)
+	account, err = s.CreateAccount(ctx, account)
+	if err != nil {
+		panic(fmt.Errorf("Unable to create account!! %w", err))
+	}
+	accountTo := &models.Account{
+		AccountNumber: "ACC0002",
+	}
+	accountTo, err = s.CreateAccount(ctx, accountTo)
 	if err != nil {
 		panic(fmt.Errorf("Unable to create account!! %w", err))
 	}
 
-	fmt.Printf("----------ACCOUNT----------\n%+v\n", acct)
+	fmt.Printf("----------ACCOUNTs----------\n%+v\n%+v\n", account, accountTo)
 
 	transaction := &models.Transaction{
-		Side:        "DR",
+		Side:        "CR",
 		Amount:      5000,
-		Description: "purchase",
-		AccountID:   acct.ID,
+		Description: "Initial Credit",
+		AccountID:   account.ID,
 	}
-	trans, err := s.CreateTransaction(ctx, transaction)
+	transaction, err = s.CreateTransaction(ctx, transaction)
 	if err != nil {
 		panic(fmt.Errorf("Unable to create transaction%w", err))
 	}
 
-	fmt.Printf("----------TRANSACTION----------\n%+v\n", trans)
+	fmt.Printf("----------TRANSACTION----------\n%+v\n", transaction)
+
+	err = s.Transfer(ctx, account.ID, accountTo.ID, 100)
+	if err != nil {
+		panic(fmt.Errorf("Unable to do transfer%w", err))
+	}
+
+	fmt.Printf("----------TRANSFER----------\n%+v\n", transaction)
 }
